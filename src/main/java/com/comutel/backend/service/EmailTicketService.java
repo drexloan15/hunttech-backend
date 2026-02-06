@@ -23,7 +23,7 @@ public class EmailTicketService {
     private UsuarioRepository usuarioRepository;
 
     // Ejecutar cada 60 segundos (60000 milisegundos)
-    @Scheduled(fixedRate = 60000)
+    @Scheduled(fixedRate = 120000)
     public void revisarCorreo() {
         System.out.println("🤖 Robot: Revisando bandeja de entrada...");
 
