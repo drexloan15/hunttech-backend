@@ -2,8 +2,10 @@ package com.comutel.backend.controller;
 
 import com.comutel.backend.model.Ticket;
 import com.comutel.backend.model.Usuario;
+import com.comutel.backend.model.Comentario;
 import com.comutel.backend.repository.TicketRepository;
 import com.comutel.backend.repository.UsuarioRepository;
+import com.comutel.backend.repository.ComentarioRepository;
 import com.comutel.backend.service.EmailSenderService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
@@ -112,6 +114,45 @@ public class TicketController {
 
         return metricas;
     }
+    @Autowired
+    private ComentarioRepository comentarioRepository;
 
+    // 1. VER COMENTARIOS
+    @GetMapping("/{id}/comentarios")
+    public List<Comentario> verComentarios(@PathVariable Long id) {
+        return comentarioRepository.findByTicketId(id);
+    }
+
+    // 2. AGREGAR COMENTARIO (Este es el que te está fallando)
+    @PostMapping("/{id}/comentarios")
+    public Comentario agregarComentario(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
+
+        Ticket ticket = ticketRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+        Long autorId = Long.valueOf(payload.get("autorId").toString());
+        Usuario autor = usuarioRepository.findById(autorId)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        String texto = payload.get("texto").toString();
+
+        // --- CORRECCIÓN DE IMAGEN ---
+        String imagen = null;
+        if (payload.containsKey("imagen") && payload.get("imagen") != null) {
+            String posibleImagen = payload.get("imagen").toString();
+            // Validamos que no sea una cadena vacía o "null" texto
+            if (!posibleImagen.isEmpty() && !posibleImagen.equals("null")) {
+                imagen = posibleImagen;
+                System.out.println("📸 IMAGEN RECIBIDA - Tamaño: " + imagen.length() + " caracteres.");
+            }
+        } else {
+            System.out.println("📝 Mensaje de solo texto (sin imagen).");
+        }
+
+        // Creamos el comentario con los datos limpios
+        Comentario nuevoComentario = new Comentario(texto, autor, ticket, imagen);
+
+        return comentarioRepository.save(nuevoComentario);
+    }
 
 }
