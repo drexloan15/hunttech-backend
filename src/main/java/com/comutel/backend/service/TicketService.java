@@ -2,6 +2,7 @@ package com.comutel.backend.service;
 
 import com.comutel.backend.dto.TicketDTO;
 import com.comutel.backend.dto.UsuarioDTO;
+import com.comutel.backend.repository.UsuarioRepository;
 import com.comutel.backend.model.*;
 import com.comutel.backend.pattern.TicketState;
 import com.comutel.backend.pattern.TicketStateFactory;
@@ -39,6 +40,8 @@ public class TicketService {
     // 🏭 INYECCIÓN DE LA FÁBRICA (El cerebro de los estados)
     @Autowired
     private TicketStateFactory stateFactory;
+
+
 
     // --- 1. CREAR TICKET ---
     @Transactional
@@ -241,6 +244,7 @@ public class TicketService {
         dto.setId(ticket.getId());
         dto.setTitulo(ticket.getTitulo());
         dto.setDescripcion(ticket.getDescripcion());
+        dto.setActivos(ticket.getActivosAfectados());
 
         dto.setEstado(ticket.getEstado() != null ? ticket.getEstado().toString() : "NUEVO");
         dto.setPrioridad(ticket.getPrioridad() != null ? ticket.getPrioridad().toString() : "BAJA");
@@ -272,5 +276,87 @@ public class TicketService {
     public TicketDTO obtenerTicketDTO(Long id) {
         Ticket ticket = obtenerPorId(id);
         return convertirADTO(ticket);
+    }
+
+    // --- 7. NOTIFICACIÓN DE CHAT ---
+    public void iniciarChat(Long ticketId, Long usuarioId) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+        Usuario iniciador = usuarioRepository.findById(usuarioId)
+                .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+
+        String mensaje = "El usuario " + iniciador.getNombre() + " ha iniciado un chat en el ticket #" + ticket.getId();
+        System.out.println("📧 LOG: " + mensaje);
+
+        // Enviar correo al dueño del ticket (si no es él quien inició)
+        if (!ticket.getUsuario().getId().equals(usuarioId)) {
+            emailSenderService.enviarNotificacion(
+                    ticket.getUsuario().getEmail(),
+                    "💬 Chat iniciado en Ticket #" + ticket.getId(),
+                    "Un técnico ha iniciado el chat para atender tu solicitud."
+            );
+        }
+
+        // Enviar correo al técnico asignado (si existe y no es él quien inició)
+        if (ticket.getTecnico() != null && !ticket.getTecnico().getId().equals(usuarioId)) {
+            emailSenderService.enviarNotificacion(
+                    ticket.getTecnico().getEmail(),
+                    "💬 Chat iniciado en Ticket #" + ticket.getId(),
+                    "El usuario ha iniciado el chat en el ticket que atiendes."
+            );
+        }
+    }
+
+
+    @Autowired
+    private ActivoRepository activoRepository; // 👈 NECESARIO PARA VINCULAR
+
+
+
+
+    @Transactional
+    public TicketDTO vincularActivo(Long ticketId, Long activoId) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+        Activo activo = activoRepository.findById(activoId)
+                .orElseThrow(() -> new RuntimeException("Activo no encontrado"));
+
+        // Inicializar lista si es nula
+        if (ticket.getActivosAfectados() == null) {
+            ticket.setActivosAfectados(new java.util.ArrayList<>());
+        }
+
+        // Evitar duplicados
+        if (!ticket.getActivosAfectados().contains(activo)) {
+            ticket.getActivosAfectados().add(activo);
+            ticketRepository.save(ticket);
+        }
+
+        return convertirADTO(ticket);
+    }
+    // ... dentro de TicketService.java ...
+
+    public TicketDTO asignarTecnico(Long ticketId, Long tecnicoId) {
+        Ticket ticket = ticketRepository.findById(ticketId)
+                .orElseThrow(() -> new RuntimeException("Ticket no encontrado"));
+
+        Usuario tecnico = usuarioRepository.findById(tecnicoId)
+                .orElseThrow(() -> new RuntimeException("Técnico no encontrado"));
+
+        ticket.setTecnico(tecnico);
+
+        // Opcional: Si el ticket era NUEVO, pásalo a EN_PROCESO automáticamente
+        if (ticket.getEstado() == Ticket.Estado.NUEVO) {
+            ticket.setEstado(Ticket.Estado.EN_PROCESO);
+        }
+
+        Ticket savedTicket = ticketRepository.save(ticket);
+
+        // 📝 Auditoría
+        registrarHistorial(savedTicket, tecnico, "AUTO-ASIGNACIÓN", "Técnico se auto-asignó el ticket.");
+
+        return convertirADTO(savedTicket); // Return DTO
     }
 }

@@ -8,28 +8,31 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/api/articulos")
-@CrossOrigin(origins = "http://localhost:5173") // Permiso para React
+@RequestMapping("/api/kb")
+@CrossOrigin(origins = "http://localhost:5173")
 public class ArticuloController {
 
     @Autowired
     private ArticuloRepository articuloRepository;
 
-    // 1. Obtener todos los artículos (Para Cliente y Técnico)
+    // 1. Listar Todos (o buscar si hay parametro ?query=...)
     @GetMapping
-    public List<Articulo> listarArticulos() {
+    public List<Articulo> listar(@RequestParam(required = false) String query) {
+        if (query != null && !query.isEmpty()) {
+            return articuloRepository.findByTituloContainingIgnoreCaseOrContenidoContainingIgnoreCase(query, query);
+        }
         return articuloRepository.findAll();
     }
 
-    // 2. Crear un artículo nuevo (Solo Técnico)
+    // 2. Crear Articulo
     @PostMapping
-    public Articulo crearArticulo(@RequestBody Articulo articulo) {
+    public Articulo crear(@RequestBody Articulo articulo) {
         return articuloRepository.save(articulo);
     }
 
-    // 3. Borrar artículo (Por si escribimos mal)
+    // 3. Eliminar
     @DeleteMapping("/{id}")
-    public void eliminarArticulo(@PathVariable Long id) {
+    public void eliminar(@PathVariable Long id) {
         articuloRepository.deleteById(id);
     }
 }

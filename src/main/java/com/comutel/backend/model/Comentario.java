@@ -24,34 +24,48 @@ public class Comentario {
     @JoinColumn(name = "ticket_id")
     private Ticket ticket;
 
-    @Column(columnDefinition = "TEXT") // <--- IMPORTANTE: Permite textos gigantes
+    // Campo antiguo (puedes dejarlo si tienes datos viejos, pero ya no lo usaremos)
+    @Column(columnDefinition = "TEXT")
     private String imagenBase64;
 
-    // Constructores
+    // --- ✅ CAMPO NUEVO PARA EL CHAT CON ARCHIVOS ---
+    private String imagenUrl; // Aquí guardamos el nombre del archivo (ej: "foto1.png")
+    // -----------------------------------------------
+
+    // Constructor Vacío
     public Comentario() {
         this.fecha = LocalDateTime.now();
     }
 
-    public Comentario(String texto, Usuario autor, Ticket ticket, String imagenBase64) {
+    // Constructor Principal (Usado por TicketService)
+    public Comentario(String texto, Usuario autor, Ticket ticket, String imagenUrl) {
         this.texto = texto;
         this.autor = autor;
         this.ticket = ticket;
         this.fecha = LocalDateTime.now();
-        this.imagenBase64 = imagenBase64;
-        this.fecha = LocalDateTime.now();
+        this.imagenUrl = imagenUrl; // <--- GUARDAMOS LA URL/NOMBRE AQUÍ
     }
 
-    // Getters y Setters
+    // --- Getters y Setters ---
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
+
     public String getTexto() { return texto; }
     public void setTexto(String texto) { this.texto = texto; }
+
     public LocalDateTime getFecha() { return fecha; }
     public void setFecha(LocalDateTime fecha) { this.fecha = fecha; }
+
     public Usuario getAutor() { return autor; }
     public void setAutor(Usuario autor) { this.autor = autor; }
+
     public Ticket getTicket() { return ticket; }
     public void setTicket(Ticket ticket) { this.ticket = ticket; }
+
     public String getImagenBase64() { return imagenBase64; }
     public void setImagenBase64(String imagenBase64) { this.imagenBase64 = imagenBase64; }
+
+    // ✅ Getters y Setters para imagenUrl (¡Importantes!)
+    public String getImagenUrl() { return imagenUrl; }
+    public void setImagenUrl(String imagenUrl) { this.imagenUrl = imagenUrl; }
 }

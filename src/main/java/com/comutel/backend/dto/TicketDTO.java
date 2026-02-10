@@ -1,6 +1,9 @@
 package com.comutel.backend.dto;
+import com.comutel.backend.model.Activo;
 
 import com.comutel.backend.model.Ticket;
+
+import java.util.List;
 
 public class TicketDTO {
     private Long id;
@@ -15,10 +18,13 @@ public class TicketDTO {
 
     private UsuarioDTO usuario;
     private UsuarioDTO tecnico;
+    private List<Activo> activos;
 
     public TicketDTO() {}
 
     // --- GETTERS Y SETTERS ---
+    public List<Activo> getActivos() { return activos; }
+    public void setActivos(List<Activo> activos) { this.activos = activos; }
     public Long getId() { return id; }
     public void setId(Long id) { this.id = id; }
 

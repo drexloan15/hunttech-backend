@@ -26,4 +26,5 @@ public class EmailSenderService {
             System.err.println("❌ Error enviando correo: " + e.getMessage());
         }
     }
+
 }

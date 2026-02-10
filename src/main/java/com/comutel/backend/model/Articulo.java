@@ -4,7 +4,7 @@ import jakarta.persistence.*;
 import java.time.LocalDateTime;
 
 @Entity
-@Table(name = "articulos")
+@Table(name = "articulos_kb")
 public class Articulo {
 
     @Id
@@ -13,19 +13,17 @@ public class Articulo {
 
     private String titulo;
 
-    @Column(columnDefinition = "TEXT") // Permite textos muy largos
+    @Column(length = 5000) // Texto largo para la solución
     private String contenido;
 
     private LocalDateTime fechaCreacion;
 
+    @ManyToOne
+    @JoinColumn(name = "autor_id")
+    private Usuario autor;
+
     // Constructor
     public Articulo() {
-        this.fechaCreacion = LocalDateTime.now();
-    }
-
-    public Articulo(String titulo, String contenido) {
-        this.titulo = titulo;
-        this.contenido = contenido;
         this.fechaCreacion = LocalDateTime.now();
     }
 
@@ -37,4 +35,7 @@ public class Articulo {
     public String getContenido() { return contenido; }
     public void setContenido(String contenido) { this.contenido = contenido; }
     public LocalDateTime getFechaCreacion() { return fechaCreacion; }
+    public void setFechaCreacion(LocalDateTime fechaCreacion) { this.fechaCreacion = fechaCreacion; }
+    public Usuario getAutor() { return autor; }
+    public void setAutor(Usuario autor) { this.autor = autor; }
 }

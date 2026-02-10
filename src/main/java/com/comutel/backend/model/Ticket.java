@@ -88,6 +88,13 @@ public class Ticket {
         // Ahora sí funcionará getHorasSLA()
         this.fechaVencimiento = this.fechaCreacion.plusHours(this.prioridad.getHorasSLA());
     }
+    @ManyToMany
+    @JoinTable(
+            name = "ticket_activos",
+            joinColumns = @JoinColumn(name = "ticket_id"),
+            inverseJoinColumns = @JoinColumn(name = "activo_id")
+    )
+    private java.util.List<Activo> activosAfectados;
 
     // --- GETTERS Y SETTERS ---
     public Long getId() { return id; }
@@ -112,4 +119,6 @@ public class Ticket {
     public void setTecnico(Usuario tecnico) { this.tecnico = tecnico; }
     public GrupoResolutor getGrupoAsignado() { return grupoAsignado; }
     public void setGrupoAsignado(GrupoResolutor grupoAsignado) { this.grupoAsignado = grupoAsignado; }
+    public java.util.List<Activo> getActivosAfectados() { return activosAfectados; }
+    public void setActivosAfectados(java.util.List<Activo> activosAfectados) { this.activosAfectados = activosAfectados; }
 }
