@@ -1,4 +1,4 @@
-package com.comutel.backend;
+package com.comutel.backend; // 👈 Asegúrate que el paquete sea correcto
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,10 +13,10 @@ public class WebConfig {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                registry.addMapping("/**") // Aplica a todas las URLs
-                        .allowedOriginPatterns("*") // <--- CAMBIO CLAVE: Permite cualquier IP (Celular, Laptop, etc)
-                        //.allowedOrigins("http://localhost:5173") // Permite al Frontend
-                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS") // Permite estos verbos
+                registry.addMapping("/**") // Aplica a TODAS las URLs
+                        // 👇 ESTA ES LA CLAVE: Usamos 'allowedOriginPatterns' en lugar de 'origins'
+                        .allowedOriginPatterns("*")
+                        .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                         .allowedHeaders("*")
                         .allowCredentials(true);
             }

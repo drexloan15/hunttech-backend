@@ -28,6 +28,11 @@ public class TicketService {
     @Autowired
     private TicketRepository ticketRepository;
 
+    // 👇 ESTE ES EL MÉTODO QUE TE FALTABA
+    public List<Ticket> listarTodos() {
+        return ticketRepository.findAll();
+    }
+
     @Autowired
     private UsuarioRepository usuarioRepository;
 

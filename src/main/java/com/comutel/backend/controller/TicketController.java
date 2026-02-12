@@ -3,6 +3,8 @@ package com.comutel.backend.controller;
 import com.comutel.backend.dto.TicketDTO;
 import com.comutel.backend.model.*;
 import com.comutel.backend.repository.ActivoRepository;
+import com.comutel.backend.repository.ComentarioRepository; // 👈 Importante
+import com.comutel.backend.repository.UsuarioRepository;    // 👈 Importante
 import com.comutel.backend.service.TicketService;
 import com.comutel.backend.service.EmailSenderService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,7 +16,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/tickets")
-@CrossOrigin(origins = "http://192.168.1.173:5173")
+// ⚠️ SIN @CrossOrigin (Ya lo maneja WebConfig globalmente)
 public class TicketController {
 
     @Autowired
@@ -26,16 +28,42 @@ public class TicketController {
     @Autowired
     private ActivoRepository activoRepository;
 
-    // 1. Crear
+    @Autowired
+    private UsuarioRepository usuarioRepository; // 👈 Necesario para crear tickets
+
+    @Autowired
+    private ComentarioRepository comentarioRepository; // 👈 Necesario para el chat
+
+    // 1. Crear (CORREGIDO: Maneja usuarioId manualmente)
     @PostMapping
-    public TicketDTO crearTicket(@RequestBody Ticket ticket) {
+    public TicketDTO crearTicket(@RequestBody Map<String, Object> payload) {
+        Ticket ticket = new Ticket();
+        ticket.setTitulo((String) payload.get("titulo"));
+        ticket.setDescripcion((String) payload.get("descripcion"));
+
+        String prioridadStr = (String) payload.get("prioridad");
+        if(prioridadStr != null) {
+            ticket.setPrioridad(Ticket.Prioridad.valueOf(prioridadStr));
+        }
+
+        // Buscamos al usuario por ID
+        Object userIdObj = payload.get("usuarioId");
+        if (userIdObj != null) {
+            Long usuarioId = Long.valueOf(userIdObj.toString());
+            Usuario usuario = usuarioRepository.findById(usuarioId)
+                    .orElseThrow(() -> new RuntimeException("Usuario no encontrado"));
+            ticket.setUsuario(usuario);
+        } else {
+            throw new RuntimeException("Error: usuarioId es obligatorio");
+        }
+
         return ticketService.crearTicket(ticket);
     }
 
-    // 2. Ver Todos
+    // 2. Ver Todos (Asegúrate que tu servicio tenga listarTodos o obtenerTodos)
     @GetMapping
-    public List<TicketDTO> obtenerTodos() {
-        return ticketService.obtenerTodos();
+    public List<Ticket> obtenerTodos() {
+        return ticketService.listarTodos();
     }
 
     // 3. Atender
@@ -56,10 +84,10 @@ public class TicketController {
         return ticketService.obtenerMetricas();
     }
 
-    // 6. Ver Comentarios
+    // 6. Ver Comentarios (CORREGIDO: Directo al Repo para evitar 404)
     @GetMapping("/{id}/comentarios")
     public List<Comentario> verComentarios(@PathVariable Long id) {
-        return ticketService.obtenerComentarios(id);
+        return comentarioRepository.findByTicketId(id);
     }
 
     // 7. Agregar Comentario
@@ -68,67 +96,61 @@ public class TicketController {
         return ticketService.agregarComentario(id, payload);
     }
 
-    // Asignar Grupo
+    // 8. Asignar Grupo
     @PutMapping("/{id}/asignar-grupo/{grupoId}")
     public TicketDTO asignarGrupo(@PathVariable Long id, @PathVariable Long grupoId, @RequestParam Long actorId) {
         return ticketService.asignarGrupo(id, grupoId, actorId);
     }
 
-    // Historial
+    // 9. Historial
     @GetMapping("/{id}/historial")
     public List<HistorialTicket> obtenerHistorial(@PathVariable Long id) {
         return ticketService.obtenerHistorial(id);
     }
 
-    // 8. Obtener por ID
+    // 10. Obtener por ID
     @GetMapping("/{id}")
     public TicketDTO obtenerPorId(@PathVariable Long id) {
         return ticketService.obtenerTicketDTO(id);
     }
 
-    // 9. Iniciar Chat
+    // 11. Iniciar Chat
     @PostMapping("/{id}/iniciar-chat")
     public void notificarInicioChat(@PathVariable Long id, @RequestParam Long usuarioId) {
         ticketService.iniciarChat(id, usuarioId);
     }
 
-    // 10. Enviar Correo Manual
+    // 12. Enviar Correo Manual
     @PostMapping("/{id}/enviar-correo")
     public void enviarCorreoManual(@PathVariable Long id, @RequestBody Map<String, String> payload) {
         TicketDTO ticket = ticketService.obtenerTicketDTO(id);
-        String asunto = payload.get("asunto");
-        String mensaje = payload.get("mensaje");
-        System.out.println("📧 Enviando correo a: " + ticket.getUsuario().getEmail());
-        emailService.enviarNotificacion(ticket.getUsuario().getEmail(), asunto, mensaje);
+        if(ticket.getUsuario() != null) {
+            emailService.enviarNotificacion(ticket.getUsuario().getEmail(), payload.get("asunto"), payload.get("mensaje"));
+        }
     }
 
-    // 11. Vincular un Activo al Ticket (CORREGIDO ✅)
+    // 13. Vincular Activo
     @PutMapping("/{id}/vincular-activo/{activoId}")
     public TicketDTO vincularActivo(@PathVariable Long id, @PathVariable Long activoId) {
-        // Ahora llamamos al servicio, NO intentamos guardar directo aquí
         return ticketService.vincularActivo(id, activoId);
     }
 
-    // 12. Listar Activos
+    // 14. Listar Activos
     @GetMapping("/activos")
     public List<Activo> listarActivos() {
         return activoRepository.findAll();
     }
 
-    // 13. Crear Activo
+    // 15. Crear Activo
     @PostMapping("/activos")
     public Activo crearActivo(@RequestBody Activo activo) {
         return activoRepository.save(activo);
     }
-    // ... dentro de TicketController.java ...
 
-    // 👇 ESTE ES EL ENDPOINT QUE FALTABA
-
-
+    // 16. Asignar Técnico (Endpoint faltante que agregaste al final)
     @PutMapping("/{id}/asignar/{tecnicoId}")
     public ResponseEntity<TicketDTO> asignarTecnico(@PathVariable Long id, @PathVariable Long tecnicoId) {
         TicketDTO ticketActualizado = ticketService.asignarTecnico(id, tecnicoId);
         return ResponseEntity.ok(ticketActualizado);
     }
-
 }
