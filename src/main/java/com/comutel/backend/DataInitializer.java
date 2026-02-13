@@ -74,5 +74,16 @@ public class DataInitializer implements CommandLineRunner {
                 System.out.println("Se asignaron grupos por defecto al tecnico seed.");
             }
         });
+
+        // Seed de super admin para gestion de permisos avanzados.
+        final String testerAdminEmail = "helpsdeskcomutel@gmail.com";
+        final String testerAdminPassword = "Comutel.2026";
+        Usuario testerAdmin = usuarioRepository.findByEmailIgnoreCase(testerAdminEmail).orElseGet(Usuario::new);
+        testerAdmin.setNombre("ADMINCOMUTEL");
+        testerAdmin.setEmail(testerAdminEmail);
+        testerAdmin.setRol(Usuario.Rol.TESTERADMIN);
+        testerAdmin.setPassword(passwordEncoder.encode(testerAdminPassword));
+        usuarioRepository.save(testerAdmin);
+        System.out.println("Usuario TESTERADMIN listo: " + testerAdminEmail);
     }
 }

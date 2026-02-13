@@ -36,6 +36,7 @@ public class Usuario {
     private Set<GrupoResolutor> grupos = new HashSet<>();
 
     public enum Rol {
+        TESTERADMIN,
         ADMIN,
         TECNICO,
         CLIENTE
