@@ -8,6 +8,7 @@ import jakarta.mail.BodyPart;
 import jakarta.mail.Flags;
 import jakarta.mail.Folder;
 import jakarta.mail.Message;
+import jakarta.mail.MessagingException;
 import jakarta.mail.Multipart;
 import jakarta.mail.Session;
 import jakarta.mail.Store;
@@ -22,6 +23,10 @@ import java.util.Properties;
 
 @Service
 public class EmailTicketService {
+    private static final String MISSING_IMAP_CONFIG_MSG =
+            "IMAP deshabilitado: configura app.imap.user y app.imap.password para procesar correos.";
+
+    private boolean missingImapConfigWarningLogged = false;
 
     @Autowired
     private TicketRepository ticketRepository;
@@ -45,17 +50,35 @@ public class EmailTicketService {
     public void revisarCorreo() {
         System.out.println("Robot: Revisando bandeja de entrada...");
 
+        String host = limpiar(imapHost);
+        String port = limpiar(imapPort);
+        String user = limpiar(imapUser);
+        String password = limpiar(imapPassword).replaceAll("\\s+", "");
+
+        if (host.isEmpty() || port.isEmpty() || user.isEmpty() || password.isEmpty()) {
+            if (!missingImapConfigWarningLogged) {
+                System.out.println(MISSING_IMAP_CONFIG_MSG);
+                missingImapConfigWarningLogged = true;
+            }
+            return;
+        }
+
+        missingImapConfigWarningLogged = false;
+
         Properties props = new Properties();
         props.put("mail.store.protocol", "imaps");
-        props.put("mail.imap.host", imapHost);
-        props.put("mail.imap.port", imapPort);
+        props.put("mail.imap.host", host);
+        props.put("mail.imap.port", port);
         props.put("mail.imap.ssl.enable", "true");
         props.put("mail.imap.starttls.enable", "true");
+        // Gmail can reject malformed PLAIN auth payloads; LOGIN is more tolerant.
+        props.put("mail.imap.auth.mechanisms", "LOGIN");
+        props.put("mail.imaps.auth.mechanisms", "LOGIN");
 
         try {
             Session session = Session.getDefaultInstance(props, null);
             Store store = session.getStore("imaps");
-            store.connect(imapHost, imapUser, imapPassword);
+            store.connect(host, user, password);
 
             Folder inbox = store.getFolder("INBOX");
             inbox.open(Folder.READ_WRITE);
@@ -70,6 +93,8 @@ public class EmailTicketService {
             inbox.close(false);
             store.close();
 
+        } catch (MessagingException e) {
+            System.out.println("Error IMAP al conectar: " + e.getMessage());
         } catch (Exception e) {
             e.printStackTrace();
         }
@@ -132,5 +157,9 @@ public class EmailTicketService {
         }
 
         return texto.trim();
+    }
+
+    private String limpiar(String value) {
+        return value == null ? "" : value.trim();
     }
 }
