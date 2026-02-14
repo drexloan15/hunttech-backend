@@ -72,6 +72,30 @@ public class WorkflowAdminController {
         );
     }
 
+    @PutMapping("/definitions/{definitionId}/states/{stateId}")
+    public Map<String, Object> actualizarEstado(
+            @PathVariable Long definitionId,
+            @PathVariable Long stateId,
+            @RequestBody Map<String, Object> payload
+    ) {
+        WorkflowStateDefinition state = workflowAdminService.actualizarEstado(definitionId, stateId, payload);
+        return Map.of(
+                "id", state.getId(),
+                "stateKey", state.getStateKey(),
+                "name", state.getName(),
+                "stateType", state.getStateType().name(),
+                "externalStatus", state.getExternalStatus() == null ? "" : state.getExternalStatus(),
+                "uiColor", state.getUiColor() == null ? "" : state.getUiColor(),
+                "slaPolicyId", state.getSlaPolicy() != null ? state.getSlaPolicy().getId() : 0
+        );
+    }
+
+    @DeleteMapping("/definitions/{definitionId}/states/{stateId}")
+    public Map<String, Object> eliminarEstado(@PathVariable Long definitionId, @PathVariable Long stateId) {
+        workflowAdminService.eliminarEstado(definitionId, stateId);
+        return Map.of("deleted", true, "stateId", stateId);
+    }
+
     @PostMapping("/definitions/{id}/transitions")
     public Map<String, Object> agregarTransicion(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
         WorkflowTransitionDefinition transition = workflowAdminService.agregarTransicion(id, payload);
@@ -86,6 +110,32 @@ public class WorkflowAdminController {
         );
     }
 
+    @PutMapping("/definitions/{definitionId}/transitions/{transitionId}")
+    public Map<String, Object> actualizarTransicion(
+            @PathVariable Long definitionId,
+            @PathVariable Long transitionId,
+            @RequestBody Map<String, Object> payload
+    ) {
+        WorkflowTransitionDefinition transition = workflowAdminService.actualizarTransicion(definitionId, transitionId, payload);
+        return Map.of(
+                "id", transition.getId(),
+                "fromStateKey", transition.getFromStateKey(),
+                "toStateKey", transition.getToStateKey(),
+                "eventKey", transition.getEventKey(),
+                "name", transition.getName(),
+                "conditionExpression", transition.getConditionExpression() == null ? "" : transition.getConditionExpression(),
+                "priority", transition.getPriority(),
+                "active", transition.isActive(),
+                "actionsCount", transition.getActions().size()
+        );
+    }
+
+    @DeleteMapping("/definitions/{definitionId}/transitions/{transitionId}")
+    public Map<String, Object> eliminarTransicion(@PathVariable Long definitionId, @PathVariable Long transitionId) {
+        workflowAdminService.eliminarTransicion(definitionId, transitionId);
+        return Map.of("deleted", true, "transitionId", transitionId);
+    }
+
     @PostMapping("/definitions/{id}/assignment-rules")
     public Map<String, Object> agregarReglaAsignacion(@PathVariable Long id, @RequestBody Map<String, Object> payload) {
         WorkflowAssignmentRule rule = workflowAdminService.agregarReglaAsignacion(id, payload);
@@ -96,6 +146,30 @@ public class WorkflowAdminController {
                 "priorityOrder", rule.getPriorityOrder(),
                 "active", rule.isActive()
         );
+    }
+
+    @PutMapping("/definitions/{definitionId}/assignment-rules/{ruleId}")
+    public Map<String, Object> actualizarReglaAsignacion(
+            @PathVariable Long definitionId,
+            @PathVariable Long ruleId,
+            @RequestBody Map<String, Object> payload
+    ) {
+        WorkflowAssignmentRule rule = workflowAdminService.actualizarReglaAsignacion(definitionId, ruleId, payload);
+        return Map.of(
+                "id", rule.getId(),
+                "stateKey", rule.getStateKey(),
+                "strategy", rule.getStrategy().name(),
+                "expression", rule.getExpression() == null ? "" : rule.getExpression(),
+                "targetGroupId", rule.getTargetGroup() != null ? rule.getTargetGroup().getId() : 0,
+                "priorityOrder", rule.getPriorityOrder(),
+                "active", rule.isActive()
+        );
+    }
+
+    @DeleteMapping("/definitions/{definitionId}/assignment-rules/{ruleId}")
+    public Map<String, Object> eliminarReglaAsignacion(@PathVariable Long definitionId, @PathVariable Long ruleId) {
+        workflowAdminService.eliminarReglaAsignacion(definitionId, ruleId);
+        return Map.of("deleted", true, "ruleId", ruleId);
     }
 
     @GetMapping("/sla-policies")

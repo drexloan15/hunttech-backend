@@ -7,11 +7,16 @@ import com.comutel.backend.workflow.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 @Service
 public class WorkflowAdminService {
@@ -48,7 +53,7 @@ public class WorkflowAdminService {
     }
 
     public WorkflowDefinition obtenerDefinicion(Long id) {
-        return definitionRepository.findById(id).orElseThrow(() -> new RuntimeException("WorkflowDefinition no encontrada"));
+        return definitionRepository.findById(id).orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "WorkflowDefinition no encontrada"));
     }
 
     public Map<String, Object> obtenerDefinicionView(Long id) {
@@ -121,21 +126,20 @@ public class WorkflowAdminService {
     @Transactional
     public WorkflowStateDefinition agregarEstado(Long definitionId, Map<String, Object> payload) {
         WorkflowDefinition definition = obtenerDefinicion(definitionId);
+        String stateKey = requiredString(payload, "stateKey");
+
+        if (stateRepository.existsByWorkflowDefinitionIdAndStateKey(definitionId, stateKey)) {
+            throw badRequest("Ya existe un estado con stateKey=" + stateKey + " en esta definicion");
+        }
 
         WorkflowStateDefinition state = new WorkflowStateDefinition();
         state.setWorkflowDefinition(definition);
-        state.setStateKey(requiredString(payload, "stateKey"));
+        state.setStateKey(stateKey);
         state.setName(requiredString(payload, "name"));
         state.setStateType(parseEnum(payload.get("stateType"), WorkflowStateType.class, WorkflowStateType.NORMAL));
         state.setExternalStatus(optionalString(payload, "externalStatus"));
         state.setUiColor(optionalString(payload, "uiColor"));
-
-        Long slaId = parseLong(payload.get("slaPolicyId"), null);
-        if (slaId != null) {
-            WorkflowSlaPolicy policy = slaPolicyRepository.findById(slaId)
-                    .orElseThrow(() -> new RuntimeException("SLA policy no encontrada"));
-            state.setSlaPolicy(policy);
-        }
+        state.setSlaPolicy(resolveSlaPolicy(payload));
 
         return stateRepository.save(state);
     }
@@ -143,11 +147,15 @@ public class WorkflowAdminService {
     @Transactional
     public WorkflowTransitionDefinition agregarTransicion(Long definitionId, Map<String, Object> payload) {
         WorkflowDefinition definition = obtenerDefinicion(definitionId);
+        String fromStateKey = requiredString(payload, "fromStateKey");
+        String toStateKey = requiredString(payload, "toStateKey");
+        validateStateKeyExists(definitionId, fromStateKey, "fromStateKey");
+        validateStateKeyExists(definitionId, toStateKey, "toStateKey");
 
         WorkflowTransitionDefinition transition = new WorkflowTransitionDefinition();
         transition.setWorkflowDefinition(definition);
-        transition.setFromStateKey(requiredString(payload, "fromStateKey"));
-        transition.setToStateKey(requiredString(payload, "toStateKey"));
+        transition.setFromStateKey(fromStateKey);
+        transition.setToStateKey(toStateKey);
         transition.setEventKey(requiredString(payload, "eventKey"));
         transition.setName(requiredString(payload, "name"));
         transition.setConditionExpression(optionalString(payload, "conditionExpression"));
@@ -155,24 +163,8 @@ public class WorkflowAdminService {
         transition.setActive(parseBoolean(payload.get("active"), true));
         transition = transitionRepository.save(transition);
 
-        Object actionsObj = payload.get("actions");
-        if (actionsObj instanceof List<?> actionsList) {
-            int order = 1;
-            for (Object actionObj : actionsList) {
-                if (!(actionObj instanceof Map<?, ?> actionMap)) continue;
-
-                WorkflowTransitionAction action = new WorkflowTransitionAction();
-                action.setTransition(transition);
-                Object actionKeyRaw = actionMap.get("actionKey");
-                Object actionParamsRaw = actionMap.get("actionParams");
-                action.setActionKey(actionKeyRaw == null ? "" : String.valueOf(actionKeyRaw));
-                action.setActionParams(actionParamsRaw == null ? "" : String.valueOf(actionParamsRaw));
-                action.setRunMode(parseEnum(actionMap.get("runMode"), WorkflowActionRunMode.class, WorkflowActionRunMode.SYNC));
-                action.setOrderNo(parseInt(actionMap.get("orderNo"), order++));
-                transition.getActions().add(action);
-            }
-            transition = transitionRepository.save(transition);
-        }
+        replaceActionsIfProvided(transition, payload, false);
+        transition = transitionRepository.save(transition);
 
         return transition;
     }
@@ -180,23 +172,125 @@ public class WorkflowAdminService {
     @Transactional
     public WorkflowAssignmentRule agregarReglaAsignacion(Long definitionId, Map<String, Object> payload) {
         WorkflowDefinition definition = obtenerDefinicion(definitionId);
+        String stateKey = requiredString(payload, "stateKey");
+        validateStateKeyExists(definitionId, stateKey, "stateKey");
 
         WorkflowAssignmentRule rule = new WorkflowAssignmentRule();
         rule.setWorkflowDefinition(definition);
-        rule.setStateKey(requiredString(payload, "stateKey"));
+        rule.setStateKey(stateKey);
         rule.setStrategy(parseEnum(payload.get("strategy"), WorkflowAssignmentStrategy.class, WorkflowAssignmentStrategy.NONE));
         rule.setExpression(optionalString(payload, "expression"));
         rule.setPriorityOrder(parseInt(payload.get("priorityOrder"), 100));
         rule.setActive(parseBoolean(payload.get("active"), true));
-
-        Long groupId = parseLong(payload.get("targetGroupId"), null);
-        if (groupId != null) {
-            GrupoResolutor group = grupoResolutorRepository.findById(groupId)
-                    .orElseThrow(() -> new RuntimeException("Grupo no encontrado"));
-            rule.setTargetGroup(group);
-        }
+        rule.setTargetGroup(resolveTargetGroup(payload, false, rule.getTargetGroup()));
 
         return assignmentRuleRepository.save(rule);
+    }
+
+    @Transactional
+    public WorkflowStateDefinition actualizarEstado(Long definitionId, Long stateId, Map<String, Object> payload) {
+        WorkflowStateDefinition state = obtenerEstadoEnDefinicion(definitionId, stateId);
+        String oldStateKey = state.getStateKey();
+        String newStateKey = requiredString(payload, "stateKey");
+
+        stateRepository.findByWorkflowDefinitionIdAndStateKey(definitionId, newStateKey)
+                .filter(existing -> !existing.getId().equals(stateId))
+                .ifPresent(existing -> {
+                    throw badRequest("Ya existe un estado con stateKey=" + newStateKey + " en esta definicion");
+                });
+
+        state.setStateKey(newStateKey);
+        state.setName(requiredString(payload, "name"));
+        state.setStateType(parseEnum(payload.get("stateType"), WorkflowStateType.class, WorkflowStateType.NORMAL));
+        state.setExternalStatus(optionalString(payload, "externalStatus"));
+        state.setUiColor(optionalString(payload, "uiColor"));
+        state.setSlaPolicy(resolveSlaPolicy(payload));
+        state = stateRepository.save(state);
+
+        if (!oldStateKey.equals(newStateKey)) {
+            remapStateKeyReferences(definitionId, oldStateKey, newStateKey);
+        }
+
+        return state;
+    }
+
+    @Transactional
+    public void eliminarEstado(Long definitionId, Long stateId) {
+        WorkflowStateDefinition state = obtenerEstadoEnDefinicion(definitionId, stateId);
+        String stateKey = state.getStateKey();
+
+        boolean referencedByActiveTransition =
+                transitionRepository.existsByWorkflowDefinitionIdAndFromStateKeyAndActiveTrue(definitionId, stateKey) ||
+                        transitionRepository.existsByWorkflowDefinitionIdAndToStateKeyAndActiveTrue(definitionId, stateKey);
+        if (referencedByActiveTransition) {
+            throw badRequest("No se puede eliminar el estado porque tiene transiciones activas asociadas");
+        }
+
+        if (assignmentRuleRepository.countByWorkflowDefinitionIdAndStateKeyAndActiveTrue(definitionId, stateKey) > 0) {
+            throw badRequest("No se puede eliminar el estado porque tiene reglas de asignacion activas");
+        }
+
+        List<WorkflowTransitionDefinition> relatedTransitions = transitionRepository.findByWorkflowDefinitionIdOrderByPriorityAsc(definitionId)
+                .stream()
+                .filter(t -> stateKey.equals(t.getFromStateKey()) || stateKey.equals(t.getToStateKey()))
+                .toList();
+        if (!relatedTransitions.isEmpty()) {
+            transitionRepository.deleteAll(relatedTransitions);
+        }
+
+        List<WorkflowAssignmentRule> relatedRules = assignmentRuleRepository.findByWorkflowDefinitionIdAndStateKeyOrderByPriorityOrderAsc(definitionId, stateKey);
+        if (!relatedRules.isEmpty()) {
+            assignmentRuleRepository.deleteAll(relatedRules);
+        }
+
+        stateRepository.delete(state);
+    }
+
+    @Transactional
+    public WorkflowTransitionDefinition actualizarTransicion(Long definitionId, Long transitionId, Map<String, Object> payload) {
+        WorkflowTransitionDefinition transition = obtenerTransicionEnDefinicion(definitionId, transitionId);
+        String fromStateKey = requiredString(payload, "fromStateKey");
+        String toStateKey = requiredString(payload, "toStateKey");
+        validateStateKeyExists(definitionId, fromStateKey, "fromStateKey");
+        validateStateKeyExists(definitionId, toStateKey, "toStateKey");
+
+        transition.setFromStateKey(fromStateKey);
+        transition.setToStateKey(toStateKey);
+        transition.setEventKey(requiredString(payload, "eventKey"));
+        transition.setName(requiredString(payload, "name"));
+        transition.setConditionExpression(optionalString(payload, "conditionExpression"));
+        transition.setPriority(parseInt(payload.get("priority"), 100));
+        transition.setActive(parseBoolean(payload.get("active"), true));
+
+        replaceActionsIfProvided(transition, payload, true);
+        return transitionRepository.save(transition);
+    }
+
+    @Transactional
+    public void eliminarTransicion(Long definitionId, Long transitionId) {
+        WorkflowTransitionDefinition transition = obtenerTransicionEnDefinicion(definitionId, transitionId);
+        transitionRepository.delete(transition);
+    }
+
+    @Transactional
+    public WorkflowAssignmentRule actualizarReglaAsignacion(Long definitionId, Long ruleId, Map<String, Object> payload) {
+        WorkflowAssignmentRule rule = obtenerReglaEnDefinicion(definitionId, ruleId);
+        String stateKey = requiredString(payload, "stateKey");
+        validateStateKeyExists(definitionId, stateKey, "stateKey");
+
+        rule.setStateKey(stateKey);
+        rule.setStrategy(parseEnum(payload.get("strategy"), WorkflowAssignmentStrategy.class, WorkflowAssignmentStrategy.NONE));
+        rule.setExpression(optionalString(payload, "expression"));
+        rule.setPriorityOrder(parseInt(payload.get("priorityOrder"), rule.getPriorityOrder()));
+        rule.setActive(parseBoolean(payload.get("active"), rule.isActive()));
+        rule.setTargetGroup(resolveTargetGroup(payload, true, rule.getTargetGroup()));
+        return assignmentRuleRepository.save(rule);
+    }
+
+    @Transactional
+    public void eliminarReglaAsignacion(Long definitionId, Long ruleId) {
+        WorkflowAssignmentRule rule = obtenerReglaEnDefinicion(definitionId, ruleId);
+        assignmentRuleRepository.delete(rule);
     }
 
     @Transactional
@@ -221,10 +315,131 @@ public class WorkflowAdminService {
         return slaPolicyRepository.findAll();
     }
 
+    private WorkflowStateDefinition obtenerEstadoEnDefinicion(Long definitionId, Long stateId) {
+        return stateRepository.findByIdAndWorkflowDefinitionId(stateId, definitionId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Estado no encontrado en la definicion"));
+    }
+
+    private WorkflowTransitionDefinition obtenerTransicionEnDefinicion(Long definitionId, Long transitionId) {
+        return transitionRepository.findByIdAndWorkflowDefinitionId(transitionId, definitionId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Transicion no encontrada en la definicion"));
+    }
+
+    private WorkflowAssignmentRule obtenerReglaEnDefinicion(Long definitionId, Long ruleId) {
+        return assignmentRuleRepository.findByIdAndWorkflowDefinitionId(ruleId, definitionId)
+                .orElseThrow(() -> new ResponseStatusException(NOT_FOUND, "Regla de asignacion no encontrada en la definicion"));
+    }
+
+    private void validateStateKeyExists(Long definitionId, String stateKey, String fieldName) {
+        if (stateRepository.findByWorkflowDefinitionIdAndStateKey(definitionId, stateKey).isEmpty()) {
+            throw badRequest(fieldName + " no existe en esta definicion: " + stateKey);
+        }
+    }
+
+    private void remapStateKeyReferences(Long definitionId, String oldStateKey, String newStateKey) {
+        List<WorkflowTransitionDefinition> transitions = new ArrayList<>(transitionRepository.findByWorkflowDefinitionIdOrderByPriorityAsc(definitionId));
+        boolean transitionsChanged = false;
+        for (WorkflowTransitionDefinition transition : transitions) {
+            if (oldStateKey.equals(transition.getFromStateKey())) {
+                transition.setFromStateKey(newStateKey);
+                transitionsChanged = true;
+            }
+            if (oldStateKey.equals(transition.getToStateKey())) {
+                transition.setToStateKey(newStateKey);
+                transitionsChanged = true;
+            }
+        }
+        if (transitionsChanged) {
+            transitionRepository.saveAll(transitions);
+        }
+
+        List<WorkflowAssignmentRule> rules = new ArrayList<>(assignmentRuleRepository.findByWorkflowDefinitionIdOrderByPriorityOrderAsc(definitionId));
+        boolean rulesChanged = false;
+        for (WorkflowAssignmentRule rule : rules) {
+            if (oldStateKey.equals(rule.getStateKey())) {
+                rule.setStateKey(newStateKey);
+                rulesChanged = true;
+            }
+        }
+        if (rulesChanged) {
+            assignmentRuleRepository.saveAll(rules);
+        }
+    }
+
+    private WorkflowSlaPolicy resolveSlaPolicy(Map<String, Object> payload) {
+        if (!payload.containsKey("slaPolicyId")) {
+            return null;
+        }
+
+        Long slaId = parseLong(payload.get("slaPolicyId"), null);
+        if (slaId == null) {
+            return null;
+        }
+
+        return slaPolicyRepository.findById(slaId)
+                .orElseThrow(() -> badRequest("SLA policy no encontrada"));
+    }
+
+    private GrupoResolutor resolveTargetGroup(Map<String, Object> payload, boolean allowUnset, GrupoResolutor currentGroup) {
+        if (!payload.containsKey("targetGroupId")) {
+            return currentGroup;
+        }
+
+        Long groupId = parseLong(payload.get("targetGroupId"), null);
+        if (groupId == null) {
+            return allowUnset ? null : currentGroup;
+        }
+
+        return grupoResolutorRepository.findById(groupId)
+                .orElseThrow(() -> badRequest("Grupo no encontrado"));
+    }
+
+    private void replaceActionsIfProvided(WorkflowTransitionDefinition transition, Map<String, Object> payload, boolean replaceExisting) {
+        if (!payload.containsKey("actions")) {
+            return;
+        }
+
+        Object actionsObj = payload.get("actions");
+        if (!(actionsObj instanceof List<?> actionsList)) {
+            throw badRequest("actions debe ser una lista");
+        }
+
+        if (replaceExisting) {
+            transition.getActions().clear();
+        }
+
+        int order = 1;
+        for (Object actionObj : actionsList) {
+            if (!(actionObj instanceof Map<?, ?> actionMap)) {
+                continue;
+            }
+
+            Object actionKeyRaw = actionMap.get("actionKey");
+            String actionKey = actionKeyRaw == null ? "" : String.valueOf(actionKeyRaw).trim();
+            if (actionKey.isBlank()) {
+                throw badRequest("Cada action debe tener actionKey");
+            }
+
+            WorkflowTransitionAction action = new WorkflowTransitionAction();
+            action.setTransition(transition);
+            action.setActionKey(actionKey);
+
+            Object actionParamsRaw = actionMap.get("actionParams");
+            action.setActionParams(actionParamsRaw == null ? "" : String.valueOf(actionParamsRaw));
+            action.setRunMode(parseEnum(actionMap.get("runMode"), WorkflowActionRunMode.class, WorkflowActionRunMode.SYNC));
+            action.setOrderNo(parseInt(actionMap.get("orderNo"), order++));
+            transition.getActions().add(action);
+        }
+    }
+
+    private ResponseStatusException badRequest(String message) {
+        return new ResponseStatusException(BAD_REQUEST, message);
+    }
+
     private String requiredString(Map<String, Object> payload, String key) {
         String value = optionalString(payload, key);
         if (value == null || value.isBlank()) {
-            throw new RuntimeException(key + " es obligatorio");
+            throw badRequest(key + " es obligatorio");
         }
         return value;
     }
